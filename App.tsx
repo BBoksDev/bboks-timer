@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { initAudio, initNotifications } from './src/feedback';
+import { initAudio, initNotifications, preloadSounds } from './src/feedback';
 import EditorScreen from './src/screens/EditorScreen';
 import LogScreen from './src/screens/LogScreen';
 import RunScreen from './src/screens/RunScreen';
@@ -21,12 +21,13 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 ];
 
 function Main() {
-  const { ready, workouts } = useStore();
+  const { ready, workouts, settings } = useStore();
   const [tab, setTab] = useState<Tab>('workouts');
   const [route, setRoute] = useState<Route>({ name: 'tabs' });
   const insets = useSafeAreaInsets();
 
   useEffect(() => { initAudio(); initNotifications(); }, []);
+  useEffect(() => { if (ready) preloadSounds(settings); }, [ready, settings.sounds]);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: C.bg }} />;
 

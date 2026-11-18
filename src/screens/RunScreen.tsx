@@ -6,7 +6,7 @@ import {
   cancelUpcoming, ensureNotificationPermission, haptic, play, scheduleUpcoming, speak,
   startBackgroundSession, stopBackgroundSession, updateBackgroundSession,
 } from '../feedback';
-import { PHASE_LABEL, PHASE_SPEECH, Workout, buildPlan, human, mmss, uid } from '../model';
+import { PHASE_LABEL, PHASE_SPEECH, SPEECH_COUNT, SPEECH_END, SPEECH_START, Workout, buildPlan, human, mmss, uid } from '../model';
 import { useStore } from '../store';
 import { C, PHASE_COLOR } from '../theme';
 
@@ -67,7 +67,13 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     }
     play(p.type === 'work' ? 'work' : 'rest', s);
     haptic('heavy', s);
-    speak(p.type === 'work' && totalWork > 1 ? `${p.round}라운드 ${PHASE_SPEECH.work}` : PHASE_SPEECH[p.type], s);
+    let line = PHASE_SPEECH[p.type];
+    if (p.type === 'work') {
+      const firstWork = plan.findIndex((x) => x.type === 'work') === i;
+      const lastWork = plan.length - 1 - [...plan].reverse().findIndex((x) => x.type === 'work') === i;
+      line = firstWork ? SPEECH_START : lastWork && totalWork > 1 ? `마지막, ${PHASE_SPEECH.work}` : PHASE_SPEECH.work;
+    }
+    speak(line, s);
   }, [plan, totalWork, workout.name]);
 
   const workDone = () => plan.slice(0, e.current.idx).filter((p) => p.type === 'work').length;
@@ -90,7 +96,7 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     const s = sref.current;
     play('finish', s);
     haptic('success', s);
-    speak('운동 완료! 수고하셨습니다', s);
+    speak(SPEECH_END, s);
     releaseAwake();
     bgStopTimer.current = setTimeout(stopBg, 4000); // let the finish sound/voice play out first
     redraw();
@@ -118,6 +124,7 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
         r.lastBeep = whole;
         play('tick', sref.current);
         haptic('light', sref.current);
+        if (sref.current.voiceCount && SPEECH_COUNT[whole]) speak(SPEECH_COUNT[whole], sref.current);
       }
     }
     r.lastTick = now;

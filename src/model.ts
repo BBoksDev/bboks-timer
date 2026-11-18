@@ -31,8 +31,49 @@ export type Settings = {
   haptics: boolean;
   keepAwake: boolean;
   countdown: number; // beep for the last N seconds of an interval
-  backgroundAlerts: boolean; // notifications when the app is in the background
+  backgroundAlerts: boolean; // keep running when the screen is off / app is in the background
+  sounds: Record<SoundEvent, SoundId>;
+  voiceId: string | null; // null = system default Korean voice
+  voiceRate: number; // 0.5 ~ 2.0
+  voiceCount: boolean; // say "셋, 둘, 하나" during the countdown
 };
+
+/** Moments that can each have their own alert sound. */
+export type SoundEvent = 'work' | 'rest' | 'tick' | 'finish';
+export const SOUND_EVENTS: { k: SoundEvent; label: string; hint: string }[] = [
+  { k: 'work', label: '운동 시작', hint: '운동 구간이 시작될 때' },
+  { k: 'rest', label: '휴식·준비 시작', hint: '휴식·준비·정리 구간이 시작될 때' },
+  { k: 'tick', label: '카운트다운', hint: '구간이 끝나기 몇 초 전부터 매초' },
+  { k: 'finish', label: '운동 완료', hint: '모든 구간이 끝났을 때' },
+];
+
+export type SoundId =
+  | 'none' | 'beep_tick' | 'beep_high' | 'beep_low' | 'beep_finish'
+  | 'bell_one' | 'bell_three' | 'bell_tick' | 'gong' | 'gong_short'
+  | 'whistle' | 'whistle_double' | 'chime' | 'digital' | 'digital_tick'
+  | 'wood_tick' | 'wood_double' | 'horn';
+
+export const SOUND_LABEL: Record<SoundId, string> = {
+  none: '소리 없음',
+  beep_tick: '삑 (짧게)',
+  beep_high: '삐- (길게)',
+  beep_low: '삐뽀',
+  beep_finish: '빰빰빰~',
+  bell_one: '복싱 종 (땡)',
+  bell_three: '복싱 종 (땡땡땡)',
+  bell_tick: '종 (짧게)',
+  gong: '징',
+  gong_short: '징 (짧게)',
+  whistle: '호루라기',
+  whistle_double: '호루라기 두 번',
+  chime: '딩동',
+  digital: '전자음',
+  digital_tick: '전자음 (짧게)',
+  wood_tick: '딱 (목탁)',
+  wood_double: '딱딱',
+  horn: '에어혼',
+};
+export const SOUND_IDS = Object.keys(SOUND_LABEL) as SoundId[];
 
 export const DEFAULT_SETTINGS: Settings = {
   sound: true,
@@ -41,6 +82,10 @@ export const DEFAULT_SETTINGS: Settings = {
   keepAwake: true,
   countdown: 3,
   backgroundAlerts: true,
+  sounds: { work: 'bell_three', rest: 'bell_one', tick: 'beep_tick', finish: 'gong' },
+  voiceId: null,
+  voiceRate: 1.0,
+  voiceCount: false,
 };
 
 export const DEFAULT_WORKOUTS: Workout[] = [
@@ -58,12 +103,15 @@ export const PHASE_LABEL: Record<PhaseType, string> = {
 };
 
 export const PHASE_SPEECH: Record<PhaseType, string> = {
-  prepare: '준비하세요',
-  work: '운동 시작',
+  prepare: '준비',
+  work: '운동',
   rest: '휴식',
   cyclerest: '세트 휴식',
   cooldown: '정리 운동',
 };
+export const SPEECH_START = '시작';
+export const SPEECH_END = '종료! 수고하셨습니다';
+export const SPEECH_COUNT: Record<number, string> = { 1: '하나', 2: '둘', 3: '셋', 4: '넷', 5: '다섯' };
 
 /** Ordered list of intervals for a workout. No rest after the very last work interval. */
 export function buildPlan(w: Workout): Interval[] {

@@ -28,7 +28,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const [w, l, s] = await AsyncStorage.multiGet([KEY.w, KEY.l, KEY.s]);
         if (w[1]) setW(JSON.parse(w[1]));
         if (l[1]) setL(JSON.parse(l[1]));
-        if (s[1]) setS({ ...DEFAULT_SETTINGS, ...JSON.parse(s[1]) });
+        if (s[1]) {
+          const saved = JSON.parse(s[1]);
+          setS({ ...DEFAULT_SETTINGS, ...saved, sounds: { ...DEFAULT_SETTINGS.sounds, ...(saved.sounds ?? {}) } });
+        }
       } catch {}
       loaded.current = true;
       setReady(true);

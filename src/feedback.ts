@@ -3,34 +3,62 @@ import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
-import { Interval, PHASE_LABEL, Settings, mmss } from './model';
+import { Interval, PHASE_LABEL, Settings, SoundEvent, SoundId, mmss } from './model';
 
 /* ---------- sounds ---------- */
-const SOURCES = {
-  tick: require('../assets/sounds/tick.wav'),
-  work: require('../assets/sounds/work.wav'),
-  rest: require('../assets/sounds/rest.wav'),
-  finish: require('../assets/sounds/finish.wav'),
+const SOURCES: Record<Exclude<SoundId, 'none'>, number> = {
+  beep_tick: require('../assets/sounds/beep_tick.wav'),
+  beep_high: require('../assets/sounds/beep_high.wav'),
+  beep_low: require('../assets/sounds/beep_low.wav'),
+  beep_finish: require('../assets/sounds/beep_finish.wav'),
+  bell_one: require('../assets/sounds/bell_one.wav'),
+  bell_three: require('../assets/sounds/bell_three.wav'),
+  bell_tick: require('../assets/sounds/bell_tick.wav'),
+  gong: require('../assets/sounds/gong.wav'),
+  gong_short: require('../assets/sounds/gong_short.wav'),
+  whistle: require('../assets/sounds/whistle.wav'),
+  whistle_double: require('../assets/sounds/whistle_double.wav'),
+  chime: require('../assets/sounds/chime.wav'),
+  digital: require('../assets/sounds/digital.wav'),
+  digital_tick: require('../assets/sounds/digital_tick.wav'),
+  wood_tick: require('../assets/sounds/wood_tick.wav'),
+  wood_double: require('../assets/sounds/wood_double.wav'),
+  horn: require('../assets/sounds/horn.wav'),
 };
 const SILENCE = require('../assets/sounds/silence.wav');
-export type SoundName = keyof typeof SOURCES;
-const players: Partial<Record<SoundName, AudioPlayer>> = {};
+const players: Partial<Record<SoundId, AudioPlayer>> = {};
+
+function player(id: SoundId) {
+  if (id === 'none') return null;
+  if (!players[id]) players[id] = createAudioPlayer(SOURCES[id]);
+  return players[id]!;
+}
+
+/** Load the sounds chosen in settings ahead of time so the first play is instant. */
+export function preloadSounds(s: Settings) {
+  try { Object.values(s.sounds).forEach((id) => player(id)); } catch {}
+}
 
 export async function initAudio() {
   try {
-    // play over the silent switch, lower the user's music briefly, keep running in background
-    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'duckOthers', shouldPlayInBackground: true });
-    (Object.keys(SOURCES) as SoundName[]).forEach((k) => {
-      players[k] = createAudioPlayer(SOURCES[k]);
-    });
+    // play over the silent switch, on top of the user's music at full volume, keep running in background
+    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers', shouldPlayInBackground: true });
   } catch {}
 }
 
-export function play(name: SoundName, s: Settings) {
+/** Play the sound picked for an event. */
+export function play(event: SoundEvent, s: Settings) {
   if (!s.sound) return;
-  const p = players[name];
-  if (!p) return;
+  playSound(s.sounds[event]);
+}
+
+/** Play a specific sound (also used for previews in settings). */
+export function playSound(id: SoundId) {
   try {
+    // stop any other alert still ringing (e.g. a long gong) so sounds don't pile up
+    Object.entries(players).forEach(([k, p]) => { if (k !== id) p?.pause(); });
+    const p = player(id);
+    if (!p) return;
     p.seekTo(0);
     p.play();
   } catch {}
@@ -38,8 +66,30 @@ export function play(name: SoundName, s: Settings) {
 
 export function speak(text: string, s: Settings) {
   if (!s.sound || !s.voice) return;
+  sayWith(text, s.voiceId, s.voiceRate);
+}
+
+export function sayWith(text: string, voiceId: string | null, rate: number) {
   Speech.stop();
-  Speech.speak(text, { language: 'ko-KR', rate: 1.05 });
+  Speech.speak(text, { language: 'ko-KR', rate, ...(voiceId ? { voice: voiceId } : {}) });
+}
+
+export type VoiceOption = { id: string; name: string; enhanced: boolean; note?: string };
+/** Korean voices installed on this phone. */
+export async function koreanVoices(): Promise<VoiceOption[]> {
+  try {
+    const all = await Speech.getAvailableVoicesAsync();
+    return all
+      .filter((v) => v.language?.toLowerCase().replace('_', '-').startsWith('ko'))
+      .map((v) => ({ id: v.identifier, name: v.name || v.identifier, enhanced: v.quality === Speech.VoiceQuality.Enhanced }))
+      .sort((a, b) => Number(b.enhanced) - Number(a.enhanced) || a.name.localeCompare(b.name))
+      // Android reports raw ids like "ko-kr-x-kod-local" as names; give them friendly labels
+      .map((v, i) => (/^ko[-_]kr[-_]x[-_]/i.test(v.name) || v.name === v.id && v.id.includes('-')
+        ? { ...v, name: `한국어 목소리 ${i + 1}`, note: v.id.includes('network') ? '인터넷 연결 필요' : undefined }
+        : v));
+  } catch {
+    return [];
+  }
 }
 
 export function haptic(kind: 'light' | 'heavy' | 'success', s: Settings) {
