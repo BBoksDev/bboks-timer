@@ -2,7 +2,10 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { Alert, AppState, Pressable, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { cancelUpcoming, ensureNotificationPermission, haptic, play, scheduleUpcoming, speak } from '../feedback';
+import {
+  cancelUpcoming, ensureNotificationPermission, haptic, play, scheduleUpcoming, speak,
+  startBackgroundSession, stopBackgroundSession, updateBackgroundSession,
+} from '../feedback';
 import { PHASE_LABEL, PHASE_SPEECH, Workout, buildPlan, human, mmss, uid } from '../model';
 import { useStore } from '../store';
 import { C, PHASE_COLOR } from '../theme';
@@ -44,14 +47,28 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     return r.running ? plan[r.idx].dur - (Date.now() - r.phaseStart) / 1000 : r.pausedLeft;
   };
 
+  const bgActive = useRef(false);
+  const bgStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startBg = useCallback(() => {
+    if (bgStopTimer.current) clearTimeout(bgStopTimer.current);
+    // keep the timer, beeps and voice alive when the screen is off / app is in the background
+    if (!sref.current.backgroundAlerts) return;
+    const p = plan[0];
+    bgActive.current = startBackgroundSession(`${PHASE_LABEL[p.type]} ${mmss(p.dur)}`, workout.name);
+  }, [plan, workout.name]);
+  const stopBg = () => { if (bgActive.current) stopBackgroundSession(); bgActive.current = false; };
+
   const announce = useCallback((i: number) => {
     const p = plan[i];
     const s = sref.current;
     e.current.lastBeep = null;
+    if (bgActive.current) {
+      updateBackgroundSession(`${PHASE_LABEL[p.type]} ${mmss(p.dur)}`, p.type === 'work' ? `${workout.name} · ${p.round}라운드` : workout.name);
+    }
     play(p.type === 'work' ? 'work' : 'rest', s);
     haptic('heavy', s);
     speak(p.type === 'work' && totalWork > 1 ? `${p.round}라운드 ${PHASE_SPEECH.work}` : PHASE_SPEECH[p.type], s);
-  }, [plan, totalWork]);
+  }, [plan, totalWork, workout.name]);
 
   const workDone = () => plan.slice(0, e.current.idx).filter((p) => p.type === 'work').length;
 
@@ -75,6 +92,7 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     haptic('success', s);
     speak('운동 완료! 수고하셨습니다', s);
     releaseAwake();
+    bgStopTimer.current = setTimeout(stopBg, 4000); // let the finish sound/voice play out first
     redraw();
   };
 
@@ -109,10 +127,11 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
   // start + main loop
   useEffect(() => {
     e.current = fresh();
+    startBg();
     announce(0);
     const t = setInterval(() => tick(), 100);
-    return () => { clearInterval(t); cancelUpcoming(); releaseAwake(); };
-  }, [tick, announce]);
+    return () => { clearInterval(t); cancelUpcoming(); releaseAwake(); stopBg(); };
+  }, [tick, announce, startBg]);
 
   const awake = settings.keepAwake && e.current.running && !e.current.done;
   useEffect(() => {
@@ -120,13 +139,13 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     else releaseAwake();
   }, [awake]);
 
-  // background: hand phase changes over to local notifications
+  // background: if the background audio session could not start, fall back to notifications
   useEffect(() => {
     if (sref.current.backgroundAlerts) ensureNotificationPermission().catch(() => {});
     const sub = AppState.addEventListener('change', (st) => {
       const r = e.current;
       if (st === 'background') {
-        if (r.running && !r.done && sref.current.backgroundAlerts) scheduleUpcoming(plan, r.idx, leftSec(), workout.name);
+        if (r.running && !r.done && sref.current.backgroundAlerts && !bgActive.current) scheduleUpcoming(plan, r.idx, leftSec(), workout.name);
       } else if (st === 'active') {
         cancelUpcoming();
         const before = r.idx;
@@ -139,7 +158,7 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
 
   const toggle = () => {
     const r = e.current;
-    if (r.done) { e.current = fresh(); announce(0); redraw(); return; }
+    if (r.done) { e.current = fresh(); startBg(); announce(0); redraw(); return; }
     if (r.running) { r.pausedLeft = leftSec(); r.running = false; }
     else { r.phaseStart = Date.now() - (plan[r.idx].dur - r.pausedLeft) * 1000; r.running = true; r.lastTick = Date.now(); }
     haptic('light', sref.current);

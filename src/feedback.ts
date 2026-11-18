@@ -12,13 +12,14 @@ const SOURCES = {
   rest: require('../assets/sounds/rest.wav'),
   finish: require('../assets/sounds/finish.wav'),
 };
+const SILENCE = require('../assets/sounds/silence.wav');
 export type SoundName = keyof typeof SOURCES;
 const players: Partial<Record<SoundName, AudioPlayer>> = {};
 
 export async function initAudio() {
   try {
-    // play over the silent switch and mix with the user's music
-    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'duckOthers' });
+    // play over the silent switch, lower the user's music briefly, keep running in background
+    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'duckOthers', shouldPlayInBackground: true });
     (Object.keys(SOURCES) as SoundName[]).forEach((k) => {
       players[k] = createAudioPlayer(SOURCES[k]);
     });
@@ -47,7 +48,42 @@ export function haptic(kind: 'light' | 'heavy' | 'success', s: Settings) {
   else Haptics.impactAsync(kind === 'heavy' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
-/* ---------- background notifications ---------- */
+/* ---------- keep running with the screen off ---------- */
+/**
+ * While a workout runs we loop an inaudible track and register it for the
+ * lock screen. That keeps the app alive in the background (Android media
+ * foreground service / iOS audio background mode), so the timer, beeps and
+ * voice keep working exactly like in the foreground.
+ */
+let keepAlive: AudioPlayer | null = null;
+
+export function startBackgroundSession(title: string, subtitle: string): boolean {
+  try {
+    if (!keepAlive) {
+      keepAlive = createAudioPlayer(SILENCE);
+      keepAlive.loop = true;
+      keepAlive.volume = 0.01;
+    }
+    keepAlive.play();
+    keepAlive.setActiveForLockScreen(true, { title, artist: subtitle, albumTitle: '뽁타이머' }, { showSeekForward: false, showSeekBackward: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function updateBackgroundSession(title: string, subtitle: string) {
+  try { keepAlive?.updateLockScreenMetadata({ title, artist: subtitle, albumTitle: '뽁타이머' }); } catch {}
+}
+
+export function stopBackgroundSession() {
+  try {
+    keepAlive?.pause();
+    keepAlive?.clearLockScreenControls();
+  } catch {}
+}
+
+/* ---------- background notifications (fallback) ---------- */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: false,

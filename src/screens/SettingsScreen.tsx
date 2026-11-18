@@ -11,7 +11,7 @@ const TOGGLES: [keyof Settings, string, string][] = [
   ['voice', '음성 안내', '"운동 시작", "휴식" 등을 말해줘요'],
   ['haptics', '진동', '구간이 바뀔 때 진동'],
   ['keepAwake', '화면 켜두기', '타이머 중에 화면이 꺼지지 않게'],
-  ['backgroundAlerts', '백그라운드 알림', '앱을 나가거나 화면을 꺼도 구간 전환을 알림으로'],
+  ['backgroundAlerts', '화면 꺼져도 계속', '화면을 끄거나 다른 앱으로 가도 삑삑·음성 안내가 그대로 나와요'],
 ];
 
 export default function SettingsScreen() {
