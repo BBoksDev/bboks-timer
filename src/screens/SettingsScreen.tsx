@@ -1,19 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
-import { VoiceOption, ensureNotificationPermission, koreanVoices, playSound, sayWith } from '../feedback';
+import {
+  SpeechStatus, VoiceOption, ensureNotificationPermission, koreanVoices, onSpeechStatus, openTtsSettings, playSound, sayWith, voiceCounts,
+} from '../feedback';
+import { Platform } from 'react-native';
 import { DEFAULT_WORKOUTS, SOUND_EVENTS, SOUND_IDS, SOUND_LABEL, Settings, SoundEvent, SoundId } from '../model';
 import { useStore } from '../store';
 import { C } from '../theme';
 import { Button, Chooser, OptionSheet, Row, Section, Stepper, Toggle } from '../ui';
 
 const SAMPLE = '시작! 운동. 휴식. 셋, 둘, 하나. 종료!';
+const SPEECH_TEXT: Record<SpeechStatus['state'], string> = {
+  idle: '-',
+  waiting: '준비 중…',
+  speaking: '말하는 중 ✅',
+  done: '정상 재생됨 ✅',
+  error: '오류 ❌',
+  'no-response': '음성 엔진 응답 없음 ❌',
+};
 
 export default function SettingsScreen() {
   const { settings, setSettings, setWorkouts } = useStore();
   const [sheet, setSheet] = useState<SoundEvent | 'voice' | null>(null);
   const [voices, setVoices] = useState<VoiceOption[]>([]);
 
-  useEffect(() => { koreanVoices().then(setVoices); }, []);
+  const [speech, setSpeech] = useState<SpeechStatus>({ state: 'idle' });
+  const [counts, setCounts] = useState<{ total: number; korean: number } | null>(null);
+  useEffect(() => { koreanVoices().then(setVoices); voiceCounts().then(setCounts); }, []);
+  useEffect(() => onSpeechStatus(setSpeech), []);
 
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => {
     setSettings((s) => ({ ...s, [k]: v }));
@@ -66,6 +80,15 @@ export default function SettingsScreen() {
       <View style={{ flexDirection: 'row', marginTop: 8 }}>
         <Button title="🔊 목소리 들어보기" onPress={() => sayWith(SAMPLE, settings.voiceId, settings.voiceRate)} />
       </View>
+      <Text style={{ color: C.muted, fontSize: 12, margin: 8, lineHeight: 18 }}>
+        음성 상태: {SPEECH_TEXT[speech.state]}{speech.retried ? ' (기본 목소리로 다시 시도)' : ''}{speech.detail && speech.state !== 'no-response' ? ` · ${speech.detail}` : ''}{'\n'}
+        음성 엔진: {counts == null ? '확인 중' : counts.total < 0 ? '확인 실패' : `목소리 ${counts.total}개 (한국어 ${counts.korean}개)`}
+      </Text>
+      {Platform.OS === 'android' && (
+        <View style={{ flexDirection: 'row' }}>
+          <Button title="폰 음성(TTS) 설정 열기" onPress={openTtsSettings} />
+        </View>
+      )}
 
       <Section title="기타" />
       <Row label="진동" hint="구간이 바뀔 때 진동">

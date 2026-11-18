@@ -2,7 +2,7 @@ import { AudioPlayer, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import TimerService from '../modules/timer-service';
 import { Interval, PHASE_LABEL, Settings, SoundEvent, SoundId, mmss } from './model';
 
@@ -70,14 +70,75 @@ export function speak(text: string, s: Settings) {
   sayWith(text, s.voiceId, s.voiceRate);
 }
 
+/** What happened to the last thing we tried to say; shown in settings to diagnose silent voices. */
+export type SpeechStatus = { state: 'idle' | 'waiting' | 'speaking' | 'done' | 'error' | 'no-response'; detail?: string; retried?: boolean };
+let speechStatus: SpeechStatus = { state: 'idle' };
+const speechListeners = new Set<(s: SpeechStatus) => void>();
+function setSpeechStatus(s: SpeechStatus) {
+  speechStatus = s;
+  speechListeners.forEach((l) => l(s));
+}
+export function onSpeechStatus(l: (s: SpeechStatus) => void) {
+  speechListeners.add(l);
+  l(speechStatus);
+  return () => { speechListeners.delete(l); };
+}
+
+let speechSeq = 0;
 export function sayWith(text: string, voiceId: string | null, rate: number) {
+  const seq = ++speechSeq;
+  // Android's TTS only understands a bare language code ("ko", not "ko-KR").
+  const full = { language: Platform.OS === 'android' ? 'ko' : 'ko-KR', rate, ...(voiceId ? { voice: voiceId } : {}) };
+
+  const attempt = (opts: Speech.SpeechOptions, isRetry: boolean) => {
+    let started = false;
+    const retry = (why: string) => {
+      if (seq !== speechSeq) return; // a newer phrase replaced this one
+      if (!isRetry) attempt({ rate }, true); // try again with the phone's default voice and language
+      else setSpeechStatus({ state: why === 'timeout' ? 'no-response' : 'error', detail: why, retried: true });
+    };
+    const guard = setTimeout(() => {
+      if (started) return;
+      // double-check with the engine before retrying, so we never say a phrase twice
+      Speech.isSpeakingAsync()
+        .then((speaking) => (speaking ? setSpeechStatus({ state: 'speaking', retried: isRetry }) : retry('timeout')))
+        .catch(() => retry('timeout'));
+    }, 2500);
+    setSpeechStatus({ state: 'waiting', retried: isRetry });
+    try {
+      Speech.speak(text, {
+        ...opts,
+        onStart: () => { started = true; clearTimeout(guard); setSpeechStatus({ state: 'speaking', retried: isRetry }); },
+        onDone: () => { clearTimeout(guard); if (seq === speechSeq) setSpeechStatus({ state: 'done', retried: isRetry }); },
+        onError: (e) => { started = true; clearTimeout(guard); retry(String((e as { message?: string })?.message ?? e ?? 'error')); },
+      });
+    } catch (e) {
+      clearTimeout(guard);
+      retry(String((e as Error)?.message ?? e));
+    }
+  };
+
   // Wait for stop() to finish: on Android stop and speak run on separate native
   // threads, so an un-awaited stop() can land after speak() and cut the voice off.
-  // Android's TTS also only understands a bare language code ("ko", not "ko-KR").
-  const options = { language: Platform.OS === 'android' ? 'ko' : 'ko-KR', rate, ...(voiceId ? { voice: voiceId } : {}) };
   Speech.stop()
     .catch(() => {})
-    .then(() => Speech.speak(text, options));
+    .then(() => { if (seq === speechSeq) attempt(full, false); });
+}
+
+/** Counts of all / Korean voices the phone's speech engine reports. */
+export async function voiceCounts() {
+  try {
+    const all = await Speech.getAvailableVoicesAsync();
+    return { total: all.length, korean: all.filter((v) => v.language?.toLowerCase().startsWith('ko')).length };
+  } catch {
+    return { total: -1, korean: 0 };
+  }
+}
+
+/** Opens Android's text-to-speech settings so the user can pick an engine / download Korean. */
+export function openTtsSettings() {
+  if (Platform.OS !== 'android') return;
+  Linking.sendIntent('com.android.settings.TTS_SETTINGS').catch(() => Linking.openSettings());
 }
 
 export type VoiceOption = { id: string; name: string; enhanced: boolean; note?: string };

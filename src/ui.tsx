@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from './theme';
@@ -27,25 +27,31 @@ export function Row({ label, hint, dot, children }: { label: string; hint?: stri
 export function Stepper({ value, onStep, format }: { value: number; onStep: (dir: 1 | -1) => void; format: (v: number) => string }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repeat = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepRef = useRef(onStep);
+  stepRef.current = onStep;
   const stop = () => {
     if (timer.current) clearTimeout(timer.current);
     if (repeat.current) clearInterval(repeat.current);
     timer.current = repeat.current = null;
   };
   const start = (d: 1 | -1) => {
-    onStep(d);
-    timer.current = setTimeout(() => { repeat.current = setInterval(() => onStep(d), 90); }, 400);
+    stop();
+    stepRef.current(d);
+    timer.current = setTimeout(() => { repeat.current = setInterval(() => stepRef.current(d), 90); }, 450);
   };
-  const Btn = ({ d, t }: { d: 1 | -1; t: string }) => (
-    <Pressable onPressIn={() => start(d)} onPressOut={stop} style={({ pressed }) => [s.stepBtn, pressed && { opacity: 0.6 }]} hitSlop={4}>
-      <Text style={s.stepTxt}>{t}</Text>
-    </Pressable>
-  );
+  useEffect(() => stop, []); // never leave a repeat running after the screen closes
+  // The buttons are rendered inline (not as a nested component): a component defined
+  // inside render gets remounted on every value change, which loses onPressOut and
+  // left the auto-repeat running forever.
   return (
     <View style={s.stepper}>
-      <Btn d={-1} t="−" />
+      <Pressable onPressIn={() => start(-1)} onPressOut={stop} style={({ pressed }) => [s.stepBtn, pressed && { opacity: 0.6 }]} hitSlop={4} accessibilityLabel="줄이기">
+        <Text style={s.stepTxt}>−</Text>
+      </Pressable>
       <Text style={s.val}>{format(value)}</Text>
-      <Btn d={1} t="+" />
+      <Pressable onPressIn={() => start(1)} onPressOut={stop} style={({ pressed }) => [s.stepBtn, pressed && { opacity: 0.6 }]} hitSlop={4} accessibilityLabel="늘리기">
+        <Text style={s.stepTxt}>+</Text>
+      </Pressable>
     </View>
   );
 }
