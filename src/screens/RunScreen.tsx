@@ -48,13 +48,14 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
   };
 
   const bgActive = useRef(false);
+  const tickRef = useRef<() => void>(() => {});
   const bgStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startBg = useCallback(() => {
     if (bgStopTimer.current) clearTimeout(bgStopTimer.current);
     // keep the timer, beeps and voice alive when the screen is off / app is in the background
     if (!sref.current.backgroundAlerts) return;
     const p = plan[0];
-    bgActive.current = startBackgroundSession(`${PHASE_LABEL[p.type]} ${mmss(p.dur)}`, workout.name);
+    bgActive.current = startBackgroundSession(`${PHASE_LABEL[p.type]} ${mmss(p.dur)}`, workout.name, () => tickRef.current());
   }, [plan, workout.name]);
   const stopBg = () => { if (bgActive.current) stopBackgroundSession(); bgActive.current = false; };
 
@@ -130,6 +131,8 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     r.lastTick = now;
     redraw();
   }, [plan, announce]);
+
+  tickRef.current = () => tick();
 
   // start + main loop
   useEffect(() => {

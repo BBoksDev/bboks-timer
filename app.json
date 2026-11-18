@@ -27,7 +27,9 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "permissions": ["VIBRATE"],
+      "permissions": [
+        "VIBRATE"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -35,7 +37,13 @@
     },
     "plugins": [
       "expo-audio",
-      ["expo-notifications", { "color": "#ff4d5e" }]
+      [
+        "expo-notifications",
+        {
+          "color": "#ff4d5e",
+          "icon": "./assets/notification-icon.png"
+        }
+      ]
     ]
   }
 }

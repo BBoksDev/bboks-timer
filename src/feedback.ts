@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
+import TimerService from '../modules/timer-service';
 import { Interval, PHASE_LABEL, Settings, SoundEvent, SoundId, mmss } from './model';
 
 /* ---------- sounds ---------- */
@@ -70,8 +71,13 @@ export function speak(text: string, s: Settings) {
 }
 
 export function sayWith(text: string, voiceId: string | null, rate: number) {
-  Speech.stop();
-  Speech.speak(text, { language: 'ko-KR', rate, ...(voiceId ? { voice: voiceId } : {}) });
+  // Wait for stop() to finish: on Android stop and speak run on separate native
+  // threads, so an un-awaited stop() can land after speak() and cut the voice off.
+  // Android's TTS also only understands a bare language code ("ko", not "ko-KR").
+  const options = { language: Platform.OS === 'android' ? 'ko' : 'ko-KR', rate, ...(voiceId ? { voice: voiceId } : {}) };
+  Speech.stop()
+    .catch(() => {})
+    .then(() => Speech.speak(text, options));
 }
 
 export type VoiceOption = { id: string; name: string; enhanced: boolean; note?: string };
@@ -100,22 +106,34 @@ export function haptic(kind: 'light' | 'heavy' | 'success', s: Settings) {
 
 /* ---------- keep running with the screen off ---------- */
 /**
- * While a workout runs we loop an inaudible track and register it for the
- * lock screen. That keeps the app alive in the background (Android media
- * foreground service / iOS audio background mode), so the timer, beeps and
- * voice keep working exactly like in the foreground.
+ * React Native pauses its JavaScript timers (setInterval) once the app leaves
+ * the screen, so while a workout runs we need a native clock that keeps calling
+ * `onTick` in the background:
+ * - Android: our own foreground service (modules/timer-service) shows a plain
+ *   timer notification, holds a CPU wake lock and ticks every 200 ms.
+ * - iOS: an inaudible looping track keeps the app alive (audio background mode)
+ *   and its native status updates tick every 200 ms. No lock screen player.
  */
 let keepAlive: AudioPlayer | null = null;
+let clockSub: { remove: () => void } | null = null;
 
-export function startBackgroundSession(title: string, subtitle: string): boolean {
+export function startBackgroundSession(title: string, subtitle: string, onTick: () => void): boolean {
   try {
+    clockSub?.remove();
+    clockSub = null;
+    if (Platform.OS === 'android') {
+      if (!TimerService) return false;
+      clockSub = TimerService.addListener('onTick', () => onTick());
+      TimerService.start(title, subtitle);
+      return true;
+    }
     if (!keepAlive) {
-      keepAlive = createAudioPlayer(SILENCE);
+      keepAlive = createAudioPlayer(SILENCE, { updateInterval: 200 });
       keepAlive.loop = true;
       keepAlive.volume = 0.01;
     }
+    clockSub = keepAlive.addListener('playbackStatusUpdate', () => onTick());
     keepAlive.play();
-    keepAlive.setActiveForLockScreen(true, { title, artist: subtitle, albumTitle: '뽁타이머' }, { showSeekForward: false, showSeekBackward: false });
     return true;
   } catch {
     return false;
@@ -123,13 +141,15 @@ export function startBackgroundSession(title: string, subtitle: string): boolean
 }
 
 export function updateBackgroundSession(title: string, subtitle: string) {
-  try { keepAlive?.updateLockScreenMetadata({ title, artist: subtitle, albumTitle: '뽁타이머' }); } catch {}
+  try { if (Platform.OS === 'android') TimerService?.update(title, subtitle); } catch {}
 }
 
 export function stopBackgroundSession() {
   try {
-    keepAlive?.pause();
-    keepAlive?.clearLockScreenControls();
+    clockSub?.remove();
+    clockSub = null;
+    if (Platform.OS === 'android') TimerService?.stop();
+    else keepAlive?.pause();
   } catch {}
 }
 
