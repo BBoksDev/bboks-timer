@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import {
-  SpeechStatus, VoiceOption, ensureNotificationPermission, koreanVoices, onSpeechStatus, openTtsSettings, playSound, sayWith, voiceCounts,
+  SpeechStatus, VoiceOption, ensureNotificationPermission, setAmbient, stopAmbient, koreanVoices, onSpeechStatus, openTtsSettings, playSound, sayWith, voiceCounts,
 } from '../feedback';
 import { Platform } from 'react-native';
-import { DEFAULT_WORKOUTS, SOUND_EVENTS, SOUND_IDS, SOUND_LABEL, Settings, SoundEvent, SoundId } from '../model';
+import { AMBIENT_IDS, AMBIENT_LABEL, AmbientId, DEFAULT_WORKOUTS, SOUND_EVENTS, SOUND_IDS, SOUND_LABEL, Settings, SoundEvent, SoundId } from '../model';
 import { useStore } from '../store';
 import { C } from '../theme';
 import { Button, Chooser, OptionSheet, Row, Section, Stepper, Toggle } from '../ui';
@@ -21,7 +21,7 @@ const SPEECH_TEXT: Record<SpeechStatus['state'], string> = {
 
 export default function SettingsScreen() {
   const { settings, setSettings, setWorkouts } = useStore();
-  const [sheet, setSheet] = useState<SoundEvent | 'voice' | null>(null);
+  const [sheet, setSheet] = useState<SoundEvent | 'voice' | 'amb_work' | 'amb_rest' | null>(null);
   const [voices, setVoices] = useState<VoiceOption[]>([]);
 
   const [speech, setSpeech] = useState<SpeechStatus>({ state: 'idle' });
@@ -45,7 +45,19 @@ export default function SettingsScreen() {
       { text: '추가', onPress: () => setWorkouts((ws) => [...ws, ...DEFAULT_WORKOUTS.filter((d) => !ws.some((w) => w.id === d.id))]) },
     ]);
 
-  const soundEvent = sheet && sheet !== 'voice' ? SOUND_EVENTS.find((e) => e.k === sheet) : null;
+  const soundEvent = sheet ? SOUND_EVENTS.find((e) => e.k === sheet) ?? null : null;
+  const ambKey = sheet === 'amb_work' ? 'work' : sheet === 'amb_rest' ? 'rest' : null;
+
+  // preview a background loop for a few seconds
+  const previewTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewAmbient = (id: AmbientId, volume = settings.ambientVolume) => {
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    stopAmbient();
+    if (id === 'none') return;
+    setAmbient(id, volume);
+    previewTimer.current = setTimeout(stopAmbient, 4000);
+  };
+  useEffect(() => () => { if (previewTimer.current) clearTimeout(previewTimer.current); stopAmbient(); }, []);
 
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
@@ -61,6 +73,18 @@ export default function SettingsScreen() {
       <Row label="카운트다운 시간" hint="구간이 끝나기 몇 초 전부터 알려줄지">
         <Stepper value={settings.countdown} format={(v) => `${v}초`}
           onStep={(d) => setSettings((s) => ({ ...s, countdown: Math.min(10, Math.max(0, s.countdown + d)) }))} />
+      </Row>
+
+      <Section title="배경음 (운동·휴식 중 계속)" />
+      <Row label="운동 중" hint="운동 구간 내내 깔리는 소리">
+        <Chooser value={AMBIENT_LABEL[settings.ambient.work]} onPress={() => setSheet('amb_work')} />
+      </Row>
+      <Row label="휴식 중" hint="휴식·준비·정리 구간에 깔리는 소리">
+        <Chooser value={AMBIENT_LABEL[settings.ambient.rest]} onPress={() => setSheet('amb_rest')} />
+      </Row>
+      <Row label="배경음 크기" hint="알림음보다 작게 깔려요">
+        <Stepper value={settings.ambientVolume} format={(v) => `${Math.round(v * 100)}%`}
+          onStep={(d) => setSettings((s) => ({ ...s, ambientVolume: Math.round(Math.min(1, Math.max(0.1, s.ambientVolume + d * 0.1)) * 10) / 10 }))} />
       </Row>
 
       <Section title="음성 안내" />
@@ -114,6 +138,18 @@ export default function SettingsScreen() {
         selected={soundEvent ? settings.sounds[soundEvent.k] : ''}
         onSelect={(id) => soundEvent && setSound(soundEvent.k, id as SoundId)}
         onClose={() => setSheet(null)}
+      />
+      <OptionSheet
+        visible={!!ambKey}
+        title={ambKey === 'work' ? '운동 중 배경음' : '휴식 중 배경음'}
+        options={AMBIENT_IDS.map((id) => ({ id, label: AMBIENT_LABEL[id] }))}
+        selected={ambKey ? settings.ambient[ambKey] : ''}
+        onSelect={(id) => {
+          if (!ambKey) return;
+          setSettings((s) => ({ ...s, ambient: { ...s.ambient, [ambKey]: id as AmbientId } }));
+          previewAmbient(id as AmbientId);
+        }}
+        onClose={() => { setSheet(null); stopAmbient(); }}
       />
       <OptionSheet
         visible={sheet === 'voice'}

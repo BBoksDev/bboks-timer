@@ -36,7 +36,24 @@ export type Settings = {
   voiceId: string | null; // null = system default Korean voice
   voiceRate: number; // 0.5 ~ 2.0
   voiceCount: boolean; // say "셋, 둘, 하나" during the countdown
+  ambient: { work: AmbientId; rest: AmbientId }; // background loop during work / rest phases
+  ambientVolume: number; // 0 ~ 1
 };
+
+/** Looping background sounds that fill the silence during an interval. */
+export type AmbientId = 'none' | 'clock' | 'clock_fast' | 'metronome' | 'heart_slow' | 'heart_fast' | 'drums' | 'electro' | 'rain';
+export const AMBIENT_LABEL: Record<AmbientId, string> = {
+  none: '없음',
+  clock: '째깍째깍',
+  clock_fast: '빠른 째깍',
+  metronome: '메트로놈',
+  heart_slow: '심장박동 (느리게)',
+  heart_fast: '심장박동 (빠르게)',
+  drums: '드럼 비트',
+  electro: '일렉 비트',
+  rain: '빗소리',
+};
+export const AMBIENT_IDS = Object.keys(AMBIENT_LABEL) as AmbientId[];
 
 /** Moments that can each have their own alert sound. */
 export type SoundEvent = 'work' | 'rest' | 'tick' | 'finish';
@@ -86,6 +103,8 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceId: null,
   voiceRate: 1.0,
   voiceCount: false,
+  ambient: { work: 'clock_fast', rest: 'clock' },
+  ambientVolume: 0.5,
 };
 
 export const DEFAULT_WORKOUTS: Workout[] = [

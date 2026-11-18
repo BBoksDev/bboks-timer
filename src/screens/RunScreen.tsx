@@ -4,7 +4,7 @@ import { Alert, AppState, Pressable, StatusBar, StyleSheet, Text, View, useWindo
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   cancelUpcoming, ensureNotificationPermission, haptic, play, scheduleUpcoming, speak,
-  startBackgroundSession, stopBackgroundSession, updateBackgroundSession,
+  startBackgroundSession, stopBackgroundSession, updateBackgroundSession, setAmbient, pauseAmbient, stopAmbient,
 } from '../feedback';
 import { PHASE_LABEL, PHASE_SPEECH, SPEECH_COUNT, SPEECH_END, SPEECH_START, Workout, buildPlan, human, mmss, uid } from '../model';
 import { useStore } from '../store';
@@ -142,6 +142,16 @@ export default function RunScreen({ workout, onClose }: { workout: Workout; onCl
     const t = setInterval(() => tick(), 100);
     return () => { clearInterval(t); cancelUpcoming(); releaseAwake(); stopBg(); };
   }, [tick, announce, startBg]);
+
+  // background loop (째깍째깍 etc.): follows the current phase, pauses with the timer
+  const ambientId = !e.current.done && e.current.running && settings.sound
+    ? (plan[e.current.idx].type === 'work' ? settings.ambient.work : settings.ambient.rest)
+    : 'none';
+  useEffect(() => {
+    if (ambientId === 'none') pauseAmbient();
+    else setAmbient(ambientId, settings.ambientVolume);
+  }, [ambientId, settings.ambientVolume]);
+  useEffect(() => () => stopAmbient(), []);
 
   const awake = settings.keepAwake && e.current.running && !e.current.done;
   useEffect(() => {

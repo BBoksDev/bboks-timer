@@ -30,7 +30,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (l[1]) setL(JSON.parse(l[1]));
         if (s[1]) {
           const saved = JSON.parse(s[1]);
-          setS({ ...DEFAULT_SETTINGS, ...saved, sounds: { ...DEFAULT_SETTINGS.sounds, ...(saved.sounds ?? {}) } });
+          setS({ ...DEFAULT_SETTINGS, ...saved, sounds: { ...DEFAULT_SETTINGS.sounds, ...(saved.sounds ?? {}) },
+            ambient: { ...DEFAULT_SETTINGS.ambient, ...(saved.ambient ?? {}) } });
         }
       } catch {}
       loaded.current = true;

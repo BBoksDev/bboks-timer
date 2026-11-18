@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import { Linking, Platform } from 'react-native';
 import TimerService from '../modules/timer-service';
-import { Interval, PHASE_LABEL, Settings, SoundEvent, SoundId, mmss } from './model';
+import { AmbientId, Interval, PHASE_LABEL, Settings, SoundEvent, SoundId, mmss } from './model';
 
 /* ---------- sounds ---------- */
 const SOURCES: Record<Exclude<SoundId, 'none'>, number> = {
@@ -163,6 +163,54 @@ export function haptic(kind: 'light' | 'heavy' | 'success', s: Settings) {
   if (!s.haptics) return;
   if (kind === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   else Haptics.impactAsync(kind === 'heavy' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+}
+
+/* ---------- background loops (째깍째깍 etc.) ---------- */
+const AMBIENT_SOURCES: Record<Exclude<AmbientId, 'none'>, number> = {
+  clock: require('../assets/ambient/clock.wav'),
+  clock_fast: require('../assets/ambient/clock_fast.wav'),
+  metronome: require('../assets/ambient/metronome.wav'),
+  heart_slow: require('../assets/ambient/heart_slow.wav'),
+  heart_fast: require('../assets/ambient/heart_fast.wav'),
+  drums: require('../assets/ambient/drums.wav'),
+  electro: require('../assets/ambient/electro.wav'),
+  rain: require('../assets/ambient/rain.wav'),
+};
+const ambientPlayers: Partial<Record<AmbientId, AudioPlayer>> = {};
+let ambientNow: AmbientId = 'none';
+
+function ambientPlayer(id: AmbientId) {
+  if (id === 'none') return null;
+  if (!ambientPlayers[id]) {
+    const p = createAudioPlayer(AMBIENT_SOURCES[id]);
+    p.loop = true;
+    ambientPlayers[id] = p;
+  }
+  return ambientPlayers[id]!;
+}
+
+/** Switch the background loop. Keeps playing (without restarting) if it's already the same loop. */
+export function setAmbient(id: AmbientId, volume: number) {
+  try {
+    if (id !== ambientNow) {
+      const old = ambientPlayer(ambientNow);
+      old?.pause();
+      const p = ambientPlayer(id);
+      if (p) { p.seekTo(0); }
+      ambientNow = id;
+    }
+    const p = ambientPlayer(id);
+    if (p) { p.volume = volume; p.play(); }
+  } catch {}
+}
+
+export function pauseAmbient() {
+  try { ambientPlayer(ambientNow)?.pause(); } catch {}
+}
+
+export function stopAmbient() {
+  pauseAmbient();
+  ambientNow = 'none';
 }
 
 /* ---------- keep running with the screen off ---------- */
